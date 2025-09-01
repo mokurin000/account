@@ -22,15 +22,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# Data file path
+
 DATA_FILE = Path("accounts.parquet")
 
-# Schema for the DataFrame
+
 SCHEMA = {
-    "contact": pl.String,
+    "contacts": pl.String,
     "payment_method": pl.String,
     "details": pl.String,
-    "amount": pl.Decimal(precision=10, scale=2),  # DECIMAL with 2 decimal places
+    "amount": pl.Decimal(precision=10, scale=2),
     "timestamp": pl.Datetime,
 }
 
@@ -41,20 +41,21 @@ class AccountingApp(QMainWindow):
         self.setWindowTitle("商户记账软件")
         self.setGeometry(100, 100, 800, 600)
 
-        # Load data
         self.df = self.load_data()
 
-        # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # Entry group
         entry_group = QGroupBox("记账录入")
         entry_layout = QFormLayout()
 
-        self.contact_entry = QLineEdit()
-        entry_layout.addRow("联系方式:", self.contact_entry)
+        self.qq_entry = QLineEdit()
+        entry_layout.addRow("QQ号:", self.qq_entry)
+        self.wechat_entry = QLineEdit()
+        entry_layout.addRow("微信号:", self.wechat_entry)
+        self.taobao_entry = QLineEdit()
+        entry_layout.addRow("淘宝号:", self.taobao_entry)
 
         self.payment_method = QComboBox()
         self.payment_method.addItems(["微信", "淘宝", "支付宝", "银行卡"])
@@ -76,13 +77,12 @@ class AccountingApp(QMainWindow):
         entry_group.setLayout(entry_layout)
         main_layout.addWidget(entry_group)
 
-        # Query group
         query_group = QGroupBox("查询")
         query_layout = QVBoxLayout()
 
         query_hlayout = QHBoxLayout()
         self.contact_query = QLineEdit()
-        query_hlayout.addWidget(QLabel("联系方式:"))
+        query_hlayout.addWidget(QLabel("联系方式 (QQ/微信/淘宝):"))
         query_hlayout.addWidget(self.contact_query)
 
         query_button = QPushButton("查询")
@@ -95,9 +95,9 @@ class AccountingApp(QMainWindow):
         query_layout.addWidget(self.total_label)
 
         self.records_table = QTableWidget()
-        self.records_table.setColumnCount(4)
+        self.records_table.setColumnCount(5)
         self.records_table.setHorizontalHeaderLabels(
-            ["付款方式", "详情", "金额", "时间"]
+            ["联系方式", "付款方式", "详情", "金额", "时间"]
         )
         query_layout.addWidget(self.records_table)
 
@@ -117,23 +117,39 @@ class AccountingApp(QMainWindow):
         self.df.write_parquet(DATA_FILE)
 
     def submit_entry(self):
-        contact = self.contact_entry.text().strip()
-        if not contact:
-            QMessageBox.warning(self, "错误", "联系方式不能为空")
+        qq = self.qq_entry.text().strip()
+        wechat = self.wechat_entry.text().strip()
+        taobao = self.taobao_entry.text().strip()
+
+        if not (qq or wechat or taobao):
+            QMessageBox.warning(self, "错误", "至少提供一种联系方式")
             return
+
+        contacts = "$".join(filter(None, [qq, wechat, taobao]))
+
+        existing_contact = None
+        if self.df.height > 0:
+            for contact in [qq, wechat, taobao]:
+                if contact:
+                    match = self.df.filter(
+                        pl.col("contacts").str.split("$").list.contains(contact)
+                    )
+                    if not match.is_empty():
+                        existing_contact = match["contacts"][0]
+                        break
 
         payment_method = self.payment_method.currentText()
         details = self.details_entry.text().strip()
         amount_float = self.amount_entry.value()
-        amount = Decimal(str(amount_float)).quantize(
-            Decimal("0.00")
-        )  # Ensure 2 decimal places
+        amount = Decimal(str(amount_float)).quantize(Decimal("0.00"))
 
         timestamp = datetime.now()
 
+        final_contacts = existing_contact if existing_contact else contacts
+
         new_row = pl.DataFrame(
             {
-                "contact": [contact],
+                "contacts": [final_contacts],
                 "payment_method": [payment_method],
                 "details": [details],
                 "amount": [amount],
@@ -149,7 +165,9 @@ class AccountingApp(QMainWindow):
         self.clear_entry_fields()
 
     def clear_entry_fields(self):
-        self.contact_entry.clear()
+        self.qq_entry.clear()
+        self.wechat_entry.clear()
+        self.taobao_entry.clear()
         self.details_entry.clear()
         self.amount_entry.setValue(0.0)
         self.payment_method.setCurrentIndex(0)
@@ -160,30 +178,32 @@ class AccountingApp(QMainWindow):
             QMessageBox.warning(self, "错误", "联系方式不能为空")
             return
 
-        filtered_df = self.df.filter(pl.col("contact") == contact)
+        filtered_df = self.df.filter(
+            pl.col("contacts").str.split("$").list.contains(contact)
+        )
+
         if filtered_df.is_empty():
             QMessageBox.information(self, "无记录", "没有找到该联系方式的记录")
             self.total_label.setText("总付款额: 0.00")
             self.records_table.setRowCount(0)
             return
 
-        # Calculate total
         total = sum(filtered_df["amount"].to_list())
         self.total_label.setText(f"总付款额: {total:.2f}")
 
-        # Display records
         self.records_table.setRowCount(filtered_df.height)
         for row_idx, row in enumerate(filtered_df.iter_rows(named=True)):
+            self.records_table.setItem(row_idx, 0, QTableWidgetItem(row["contacts"]))
             self.records_table.setItem(
-                row_idx, 0, QTableWidgetItem(row["payment_method"])
+                row_idx, 1, QTableWidgetItem(row["payment_method"])
             )
-            self.records_table.setItem(row_idx, 1, QTableWidgetItem(row["details"]))
+            self.records_table.setItem(row_idx, 2, QTableWidgetItem(row["details"]))
             self.records_table.setItem(
-                row_idx, 2, QTableWidgetItem(f"{row['amount']:.2f}")
+                row_idx, 3, QTableWidgetItem(f"{row['amount']:.2f}")
             )
             self.records_table.setItem(
                 row_idx,
-                3,
+                4,
                 QTableWidgetItem(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S")),
             )
 
