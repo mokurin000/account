@@ -22,9 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
 DATA_FILE = Path("accounts.parquet")
-
+EXPORT_FILE = Path("accounts.xlsx")
 
 SCHEMA = {
     "contacts": pl.String,
@@ -75,7 +74,10 @@ class AccountingApp(QMainWindow):
         entry_layout.addRow(submit_button)
 
         entry_group.setLayout(entry_layout)
-        main_layout.addWidget(entry_group)
+
+        # Add export button
+        export_button = QPushButton("导出为Excel")
+        export_button.clicked.connect(self.export_to_excel)
 
         query_group = QGroupBox("查询")
         query_layout = QVBoxLayout()
@@ -101,10 +103,10 @@ class AccountingApp(QMainWindow):
         )
         query_layout.addWidget(self.records_table)
 
-        entry_group.setLayout(entry_layout)
         query_group.setLayout(query_layout)
 
         main_layout.addWidget(entry_group)
+        main_layout.addWidget(export_button)
         main_layout.addWidget(query_group)
 
     def load_data(self):
@@ -115,6 +117,16 @@ class AccountingApp(QMainWindow):
 
     def save_data(self):
         self.df.write_parquet(DATA_FILE)
+
+    def export_to_excel(self):
+        try:
+            if self.df.is_empty():
+                QMessageBox.warning(self, "警告", "没有数据可导出")
+                return
+            self.df.write_excel(EXPORT_FILE)
+            QMessageBox.information(self, "成功", f"数据已导出到 {EXPORT_FILE}")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
 
     def submit_entry(self):
         qq = self.qq_entry.text().strip()
