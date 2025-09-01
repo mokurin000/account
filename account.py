@@ -49,12 +49,30 @@ class AccountingApp(QMainWindow):
         entry_group = QGroupBox("记账录入")
         entry_layout = QFormLayout()
 
-        self.qq_entry = QLineEdit()
-        entry_layout.addRow("QQ号:", self.qq_entry)
-        self.wechat_entry = QLineEdit()
-        entry_layout.addRow("微信号:", self.wechat_entry)
-        self.taobao_entry = QLineEdit()
-        entry_layout.addRow("淘宝号:", self.taobao_entry)
+        # Replace QLineEdit with QComboBox for contacts
+        self.qq_combo = QComboBox()
+        self.qq_combo.setEditable(True)
+        entry_layout.addRow("QQ号:", self.qq_combo)
+        self.wechat_combo = QComboBox()
+        self.wechat_combo.setEditable(True)
+        entry_layout.addRow("微信号:", self.wechat_combo)
+        self.taobao_combo = QComboBox()
+        self.taobao_combo.setEditable(True)
+        entry_layout.addRow("淘宝号:", self.taobao_combo)
+
+        # Populate combos with existing contacts
+        self.populate_contact_combos()
+
+        # Connect combo box signals to update other fields
+        self.qq_combo.currentTextChanged.connect(
+            lambda: self.update_contact_fields("qq")
+        )
+        self.wechat_combo.currentTextChanged.connect(
+            lambda: self.update_contact_fields("wechat")
+        )
+        self.taobao_combo.currentTextChanged.connect(
+            lambda: self.update_contact_fields("taobao")
+        )
 
         self.payment_method = QComboBox()
         self.payment_method.addItems(["微信", "淘宝", "支付宝", "银行卡"])
@@ -117,6 +135,69 @@ class AccountingApp(QMainWindow):
 
     def save_data(self):
         self.df.write_parquet(DATA_FILE)
+        # Refresh combos after saving new data
+        self.clear_entry_fields()
+
+    def populate_contact_combos(self):
+        """Populate contact combo boxes with unique values from DataFrame."""
+        if self.df.is_empty():
+            return
+
+        # Get unique contacts by splitting the contacts column
+        contacts = self.df["contacts"].unique().str.split("$").sort()
+
+        for combo in [
+            self.qq_combo,
+            self.wechat_combo,
+            self.taobao_combo,
+        ]:
+            combo.addItem("")
+
+        for qq, wechat, taobao in contacts:
+            self.qq_combo.addItem(qq)
+            self.wechat_combo.addItem(wechat)
+            self.taobao_combo.addItem(taobao)
+
+    def update_contact_fields(self, changed_field):
+        """Update other contact fields based on the selected contact."""
+        if self.df.is_empty():
+            return
+
+        # Get the selected contact
+        if changed_field == "qq":
+            selected = self.qq_combo.currentText().strip()
+        elif changed_field == "wechat":
+            selected = self.wechat_combo.currentText().strip()
+        else:  # taobao
+            selected = self.taobao_combo.currentText().strip()
+
+        if not selected:
+            return
+
+        # Find matching record
+        match = self.df.filter(
+            pl.col("contacts").str.split("$").list.contains(selected)
+        )
+        if match.is_empty():
+            return
+
+        # Get the contacts from the first matching record
+        contact: str = match["contacts"][0]
+        qq, wechat, taobao = contact.split("$")
+
+        # Update other fields, but avoid infinite recursion
+        if changed_field != "qq":
+            self.qq_combo.blockSignals(True)
+            self.qq_combo.setCurrentText(qq)
+            self.qq_combo.blockSignals(False)
+        if changed_field != "wechat":
+            self.wechat_combo.blockSignals(True)
+            self.wechat_combo.setCurrentText(wechat)
+            self.wechat_combo.blockSignals(False)
+        if changed_field != "taobao":
+            self.taobao_combo.blockSignals(True)
+            self.taobao_combo.setCurrentText(taobao)
+            self.taobao_combo.blockSignals(False)
 
     def export_to_excel(self):
         try:
@@ -129,15 +210,16 @@ class AccountingApp(QMainWindow):
             QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
 
     def submit_entry(self):
-        qq = self.qq_entry.text().strip()
-        wechat = self.wechat_entry.text().strip()
-        taobao = self.taobao_entry.text().strip()
+        qq = self.qq_combo.currentText().strip()
+        wechat = self.wechat_combo.currentText().strip()
+        taobao = self.taobao_combo.currentText().strip()
 
         if not (qq or wechat or taobao):
             QMessageBox.warning(self, "错误", "至少提供一种联系方式")
             return
 
-        contacts = "$".join(filter(None, [qq, wechat, taobao]))
+        # Join all contacts, including empty strings
+        contacts = "$".join([qq, wechat, taobao])
 
         existing_contact = None
         if self.df.height > 0:
@@ -177,9 +259,11 @@ class AccountingApp(QMainWindow):
         self.clear_entry_fields()
 
     def clear_entry_fields(self):
-        self.qq_entry.clear()
-        self.wechat_entry.clear()
-        self.taobao_entry.clear()
+        self.qq_combo.clear()
+        self.wechat_combo.clear()
+        self.taobao_combo.clear()
+        self.populate_contact_combos()
+
         self.details_entry.clear()
         self.amount_entry.setValue(0.0)
         self.payment_method.setCurrentIndex(0)
