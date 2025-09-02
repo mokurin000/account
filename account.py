@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QDateEdit,
 )
+from PySide6.QtCore import QDate
 
 DATA_FILE = Path("accounts.parquet")
 EXPORT_FILE = Path("accounts.xlsx")
@@ -75,7 +77,7 @@ class AccountingApp(QMainWindow):
         )
 
         self.payment_method = QComboBox()
-        self.payment_method.addItems(["微信", "淘宝", "支付宝", "银行卡"])
+        self.payment_method.addItems(["微信", "淘宝", "支付宝", "（内部交易）"])
         entry_layout.addRow("付款方式:", self.payment_method)
 
         self.details_entry = QLineEdit()
@@ -93,9 +95,29 @@ class AccountingApp(QMainWindow):
 
         entry_group.setLayout(entry_layout)
 
+        main_layout.addWidget(entry_group)
+
+        # Add copy to clipboard button
+        copy_button = QPushButton("复制到剪贴板")
+        copy_button.clicked.connect(self.copy_to_clipboard)
+        main_layout.addWidget(copy_button)
+
+        # Add date selection for export
+        date_layout = QHBoxLayout()
+        self.start_date = QDateEdit()
+        self.start_date.setDate(QDate.currentDate().addDays(-1))
+        date_layout.addWidget(QLabel("开始日期:"))
+        date_layout.addWidget(self.start_date)
+        self.end_date = QDateEdit()
+        self.end_date.setDate(QDate.currentDate())
+        date_layout.addWidget(QLabel("结束日期:"))
+        date_layout.addWidget(self.end_date)
+        main_layout.addLayout(date_layout)
+
         # Add export button
         export_button = QPushButton("导出为Excel")
         export_button.clicked.connect(self.export_to_excel)
+        main_layout.addWidget(export_button)
 
         query_group = QGroupBox("查询")
         query_layout = QVBoxLayout()
@@ -123,8 +145,6 @@ class AccountingApp(QMainWindow):
 
         query_group.setLayout(query_layout)
 
-        main_layout.addWidget(entry_group)
-        main_layout.addWidget(export_button)
         main_layout.addWidget(query_group)
 
     def load_data(self):
@@ -199,12 +219,49 @@ class AccountingApp(QMainWindow):
             self.taobao_combo.setCurrentText(taobao)
             self.taobao_combo.blockSignals(False)
 
+    def copy_to_clipboard(self):
+        qq = self.qq_combo.currentText().strip()
+        wechat = self.wechat_combo.currentText().strip()
+        taobao = self.taobao_combo.currentText().strip()
+        payment = self.payment_method.currentText()
+        details = self.details_entry.text().strip()
+        amount = self.amount_entry.value()
+
+        lines = []
+        if qq:
+            lines.append(f"qq号: {qq}")
+        if wechat:
+            lines.append(f"微信号: {wechat}")
+        if taobao:
+            lines.append(f"淘宝号: {taobao}")
+        action = "退款" if amount < 0 else "支付"
+        abs_amount = abs(amount)
+        lines.append(f"客户通过{payment}，{action}了 {abs_amount:.2f} 元")
+        if details:
+            lines.append(f"相关详情: {details}")
+
+        text = "\n".join(lines)
+        QApplication.clipboard().setText(text)
+        QMessageBox.information(self, "成功", "已复制到剪贴板")
+
     def export_to_excel(self):
         try:
             if self.df.is_empty():
                 QMessageBox.warning(self, "警告", "没有数据可导出")
                 return
-            self.df.write_excel(EXPORT_FILE)
+
+            start = self.start_date.date().toPython()
+            end = self.end_date.date().toPython()
+
+            filtered = self.df.filter(
+                pl.col("timestamp").dt.date().is_between(start, end)
+            )
+
+            if filtered.is_empty():
+                QMessageBox.warning(self, "警告", "选定日期范围内没有数据")
+                return
+
+            filtered.write_excel(EXPORT_FILE)
             QMessageBox.information(self, "成功", f"数据已导出到 {EXPORT_FILE}")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
