@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QDateEdit,
+    QAbstractItemView,
 )
 from PySide6.QtCore import QDate
 
@@ -46,7 +47,10 @@ class AccountingApp(QMainWindow):
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        main_hlayout = QHBoxLayout(central_widget)
+
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
 
         entry_group = QGroupBox("记账录入")
         entry_layout = QFormLayout()
@@ -93,14 +97,13 @@ class AccountingApp(QMainWindow):
         submit_button.clicked.connect(self.submit_entry)
         entry_layout.addRow(submit_button)
 
-        entry_group.setLayout(entry_layout)
-
-        main_layout.addWidget(entry_group)
-
         # Add copy to clipboard button
         copy_button = QPushButton("复制到剪贴板")
         copy_button.clicked.connect(self.copy_to_clipboard)
-        main_layout.addWidget(copy_button)
+        entry_layout.addRow(copy_button)
+        entry_group.setLayout(entry_layout)
+
+        left_layout.addWidget(entry_group)
 
         # Add date selection for export
         date_layout = QHBoxLayout()
@@ -112,12 +115,12 @@ class AccountingApp(QMainWindow):
         self.end_date.setDate(QDate.currentDate())
         date_layout.addWidget(QLabel("结束日期:"))
         date_layout.addWidget(self.end_date)
-        main_layout.addLayout(date_layout)
+        left_layout.addLayout(date_layout)
 
         # Add export button
         export_button = QPushButton("导出为Excel")
         export_button.clicked.connect(self.export_to_excel)
-        main_layout.addWidget(export_button)
+        left_layout.addWidget(export_button)
 
         query_group = QGroupBox("查询")
         query_layout = QVBoxLayout()
@@ -145,7 +148,30 @@ class AccountingApp(QMainWindow):
 
         query_group.setLayout(query_layout)
 
-        main_layout.addWidget(query_group)
+        left_layout.addWidget(query_group)
+
+        main_hlayout.addWidget(left_widget)
+
+        # Add right panel for recent 50 records
+        recent_group = QGroupBox("最近50条记录")
+        recent_layout = QVBoxLayout()
+
+        delete_button = QPushButton("删除选中记录")
+        delete_button.clicked.connect(self.delete_selected_record)
+        recent_layout.addWidget(delete_button)
+
+        self.recent_table = QTableWidget()
+        self.recent_table.setColumnCount(5)
+        self.recent_table.setHorizontalHeaderLabels(
+            ["联系方式", "付款方式", "详情", "金额", "时间"]
+        )
+        self.recent_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        recent_layout.addWidget(self.recent_table)
+
+        recent_group.setLayout(recent_layout)
+        main_hlayout.addWidget(recent_group)
+
+        self.populate_recent_table()
 
     def load_data(self):
         if DATA_FILE.exists():
@@ -157,6 +183,7 @@ class AccountingApp(QMainWindow):
         self.df.write_parquet(DATA_FILE)
         # Refresh combos after saving new data
         self.clear_entry_fields()
+        self.populate_recent_table()
 
     def populate_contact_combos(self):
         """Populate contact combo boxes with unique values from DataFrame."""
@@ -361,6 +388,52 @@ class AccountingApp(QMainWindow):
             )
 
         self.records_table.resizeColumnsToContents()
+
+    def populate_recent_table(self):
+        if self.df.is_empty():
+            self.recent_table.setRowCount(0)
+            return
+
+        recent_df = self.df.sort("timestamp", descending=True).head(50)
+        self.recent_table.setRowCount(recent_df.height)
+        for row_idx, row in enumerate(recent_df.iter_rows(named=True)):
+            self.recent_table.setItem(row_idx, 0, QTableWidgetItem(row["contacts"]))
+            self.recent_table.setItem(
+                row_idx, 1, QTableWidgetItem(row["payment_method"])
+            )
+            self.recent_table.setItem(row_idx, 2, QTableWidgetItem(row["details"]))
+            self.recent_table.setItem(
+                row_idx, 3, QTableWidgetItem(f"{row['amount']:.2f}")
+            )
+            self.recent_table.setItem(
+                row_idx,
+                4,
+                QTableWidgetItem(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S")),
+            )
+
+        self.recent_table.resizeColumnsToContents()
+
+    def delete_selected_record(self):
+        selected_row = self.recent_table.currentRow()
+        if selected_row == -1:
+            QMessageBox.warning(self, "错误", "请先选择一条记录")
+            return
+
+        contacts = self.recent_table.item(selected_row, 0).text()
+        payment = self.recent_table.item(selected_row, 1).text()
+        details = self.recent_table.item(selected_row, 2).text()
+        ts_str = self.recent_table.item(selected_row, 4).text()
+
+        print(f"deleting: {contacts} - {payment} - {ts_str} [{details or '-'}]")
+
+        self.df = self.df.remove(
+            pl.col("timestamp").dt.strftime("%Y-%m-%d %H:%M:%S") == ts_str,
+            pl.col("contacts") == contacts,
+            pl.col("payment_method") == payment,
+            pl.col("details") == details,
+        )
+        self.save_data()
+        QMessageBox.information(self, "成功", "记录已删除")
 
 
 if __name__ == "__main__":
