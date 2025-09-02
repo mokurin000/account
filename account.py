@@ -166,6 +166,7 @@ class AccountingApp(QMainWindow):
             ["联系方式", "付款方式", "详情", "金额", "时间"]
         )
         self.recent_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.recent_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         recent_layout.addWidget(self.recent_table)
 
         recent_group.setLayout(recent_layout)
