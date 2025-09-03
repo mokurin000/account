@@ -81,7 +81,16 @@ class AccountingApp(QMainWindow):
         )
 
         self.payment_method = QComboBox()
-        self.payment_method.addItems(["微信", "淘宝", "支付宝", "（内部交易）"])
+        self.payment_method.addItems(
+            [
+                "微信",
+                "淘宝",
+                "支付宝",
+                "京东",
+                "拼多多",
+                "（内部交易）",
+            ]
+        )
         entry_layout.addRow("付款方式:", self.payment_method)
 
         self.details_entry = QLineEdit()

@@ -6,5 +6,6 @@
 ## Bundle binary
 
 ```bash
+uv pip install pyinstaller
 uv run pyinstaller -w --onedir --collect-binaries polars --optimize 2 account.py
 ```
