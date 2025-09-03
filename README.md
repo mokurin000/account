@@ -1,9 +1,10 @@
-## TODO
+# Account
 
-- 除了查询功能 还能搞个分块显示下 最近十几二十条输入的信息
-  - 并且能在这个框里面删除 输入错误的信息
+Qt6 based account software, designed for Chinese businessman.
 
-## Bundle binary
+Now with Xeon v2 processor support! (thanks to polars-lts-cpu)
+
+## Bundle as binary
 
 ```bash
 uv pip install pyinstaller
