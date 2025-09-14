@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
 )
 from PySide6.QtCore import QDate
+from PySide6.QtGui import Qt
 
 DATA_FILE = Path("accounts.parquet")
 EXPORT_FILE = Path("accounts.xlsx")
@@ -197,7 +198,7 @@ class AccountingApp(QMainWindow):
         totals_layout.addWidget(self.totals_table)
 
         totals_group.setLayout(totals_layout)
-        main_hlayout.addWidget(totals_group)
+        main_hlayout.addWidget(totals_group, alignment=Qt.AlignmentFlag.AlignRight)
 
         self.populate_recent_table()
         self.populate_totals_table()
