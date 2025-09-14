@@ -6,6 +6,7 @@ from pathlib import Path
 import polars as pl
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -102,6 +103,10 @@ class AccountingApp(QMainWindow):
         self.amount_entry.setSingleStep(0.01)
         entry_layout.addRow("金额 (负数为退款):", self.amount_entry)
 
+        # Add checkbox for internal transaction
+        self.internal_checkbox = QCheckBox("内部交易")
+        entry_layout.addRow(self.internal_checkbox)
+
         submit_button = QPushButton("提交")
         submit_button.clicked.connect(self.submit_entry)
         entry_layout.addRow(submit_button)
@@ -181,7 +186,21 @@ class AccountingApp(QMainWindow):
         recent_group.setLayout(recent_layout)
         main_hlayout.addWidget(recent_group)
 
+        # Add totals panel to the right
+        totals_group = QGroupBox("各付款方式总额")
+        totals_layout = QVBoxLayout()
+
+        self.totals_table = QTableWidget()
+        self.totals_table.setColumnCount(2)
+        self.totals_table.setHorizontalHeaderLabels(["付款方式", "总额"])
+        self.totals_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        totals_layout.addWidget(self.totals_table)
+
+        totals_group.setLayout(totals_layout)
+        main_hlayout.addWidget(totals_group)
+
         self.populate_recent_table()
+        self.populate_totals_table()
 
     def load_data(self):
         if DATA_FILE.exists():
@@ -194,6 +213,7 @@ class AccountingApp(QMainWindow):
         # Refresh combos after saving new data
         self.clear_entry_fields()
         self.populate_recent_table()
+        self.populate_totals_table()
 
     def populate_contact_combos(self):
         """Populate contact combo boxes with unique values from DataFrame."""
@@ -347,6 +367,23 @@ class AccountingApp(QMainWindow):
         )
 
         self.df = pl.concat([self.df, new_row], how="diagonal_relaxed")
+
+        # If internal transaction checkbox is checked, add offsetting record
+        if self.internal_checkbox.isChecked():
+            offset_contacts = "内部交易$内部交易$内部交易"
+            offset_amount = -amount
+            offset_row = pl.DataFrame(
+                {
+                    "contacts": [offset_contacts],
+                    "payment_method": ["（内部交易）"],
+                    "details": [details],
+                    "amount": [offset_amount],
+                    "timestamp": [timestamp],
+                },
+                schema=SCHEMA,
+            )
+            self.df = pl.concat([self.df, offset_row], how="diagonal_relaxed")
+
         self.save_data()
 
         QMessageBox.information(self, "成功", "记账已提交")
@@ -361,6 +398,7 @@ class AccountingApp(QMainWindow):
         self.details_entry.clear()
         self.amount_entry.setValue(0.0)
         self.payment_method.setCurrentIndex(0)
+        self.internal_checkbox.setChecked(False)
 
     def query_records(self):
         contact = self.contact_query.text().strip()
@@ -423,6 +461,28 @@ class AccountingApp(QMainWindow):
 
         self.recent_table.resizeColumnsToContents()
 
+    def populate_totals_table(self):
+        if self.df.is_empty():
+            self.totals_table.setRowCount(0)
+            return
+
+        totals_df = (
+            self.df.group_by("payment_method")
+            .agg(pl.col("amount").sum().alias("total"))
+            .sort("payment_method")
+        )
+
+        self.totals_table.setRowCount(totals_df.height)
+        for row_idx, row in enumerate(totals_df.iter_rows(named=True)):
+            self.totals_table.setItem(
+                row_idx, 0, QTableWidgetItem(row["payment_method"])
+            )
+            self.totals_table.setItem(
+                row_idx, 1, QTableWidgetItem(f"{row['total']:.2f}")
+            )
+
+        self.totals_table.resizeColumnsToContents()
+
     def delete_selected_record(self):
         selected_row = self.recent_table.currentRow()
         if selected_row == -1:
@@ -436,11 +496,13 @@ class AccountingApp(QMainWindow):
 
         print(f"deleting: {contacts} - {payment} - {ts_str} [{details or '-'}]")
 
-        self.df = self.df.remove(
-            pl.col("timestamp").dt.strftime("%Y-%m-%d %H:%M:%S") == ts_str,
-            pl.col("contacts") == contacts,
-            pl.col("payment_method") == payment,
-            pl.col("details") == details,
+        self.df = self.df.filter(
+            ~(
+                (pl.col("timestamp").dt.strftime("%Y-%m-%d %H:%M:%S") == ts_str)
+                & (pl.col("contacts") == contacts)
+                & (pl.col("payment_method") == payment)
+                & (pl.col("details") == details)
+            )
         )
         self.save_data()
         QMessageBox.information(self, "成功", "记录已删除")
