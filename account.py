@@ -232,9 +232,12 @@ class AccountingApp(QMainWindow):
             combo.addItem("")
 
         for qq, wechat, taobao in contacts:
-            self.qq_combo.addItem(qq)
-            self.wechat_combo.addItem(wechat)
-            self.taobao_combo.addItem(taobao)
+            if qq:
+                self.qq_combo.addItem(qq)
+            if wechat:
+                self.wechat_combo.addItem(wechat)
+            if taobao:
+                self.taobao_combo.addItem(taobao)
 
     def update_contact_fields(self, changed_field):
         """Update other contact fields based on the selected contact."""
