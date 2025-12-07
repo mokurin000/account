@@ -333,6 +333,10 @@ class AccountingApp(QMainWindow):
             QMessageBox.warning(self, "错误", "至少提供一种联系方式")
             return
 
+        if any(map(lambda s: "$" in s, (qq, wechat, taobao))):
+            QMessageBox.warning(self, "错误", "联系方式不可包含 $ 符号")
+            return
+
         # Join all contacts, including empty strings
         contacts = "$".join([qq, wechat, taobao])
 
